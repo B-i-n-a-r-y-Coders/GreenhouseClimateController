@@ -19,14 +19,14 @@ class _MainScreenState extends State<MainScreen> {
   List<Feed> feed = [];
   DataModel dataModel;
 
-  @override
-  void initState() {
-    super.initState();
-    timer = Timer.periodic(Duration(seconds: 5), (timer) async {
-      feed = await greenHouseDataControlller.getDataFromThingspeak();
-      print('called');
-    });
-  }
+  // @override
+  // void initState() {
+  //   super.initState();
+  //   timer = Timer.periodic(Duration(seconds: 1), (timer) {
+  //     greenHouseDataControlller.getDataFromThingspeak2();
+  //     print('called');
+  //   });
+  // }
 
   @override
   Widget build(BuildContext context) {
@@ -42,18 +42,25 @@ class _MainScreenState extends State<MainScreen> {
             greenHouseDataControlller.getDataFromThingspeak();
           }),
           FutureBuilder(
-              future: Future.delayed(Duration(seconds: 10)),
-              builder: (context, snapshot) {
-                return Container(
-                    decoration: BoxDecoration(color: Colors.red.shade100),
-                    height: 400,
-                    child: ListView.builder(
-                        itemBuilder: (ctx, i) {
-                          return Text(
-                              '${greenHouseDataControlller.feed[i]} index : $i ');
-                        },
-                        itemCount: greenHouseDataControlller.feed.length));
-              }),
+            future: Future.delayed(Duration(seconds: 10)),
+            builder: (context, snapshot) {
+              return StreamBuilder<Object>(
+                  stream: greenHouseDataControlller.getDataFromThingspeak2(),
+                  builder: (context, snapshot) {
+                    List<Feed> nalli = snapshot.data;
+                    return Container(
+                        decoration: BoxDecoration(color: Colors.red.shade100),
+                        height: 400,
+                        child: ListView.builder(
+                            itemBuilder: (ctx, i) {
+                              print(nalli[i].entryId);
+
+                              return Text('${nalli[i].entryId} ');
+                            },
+                            itemCount: greenHouseDataControlller.feed.length));
+                  });
+            },
+          ),
         ],
       ),
     );
