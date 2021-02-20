@@ -1,4 +1,4 @@
-# ghclimatecon
+# GreenHouse Climate Controller
 
 A new Flutter project.
 
