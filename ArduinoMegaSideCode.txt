@@ -1,0 +1,355 @@
+/*
+  GreenHouse Controller Code_Khushi singh and Team,  VIT, Vellore
+ * Sensors connection:
+ * Soil Moisture: Analog Out-A2
+ * Relay P1-57, P2-58, P3-59, P4-60
+ * Light Sensor: Analog out-A1
+ * Temp Humidity Sensor DHT11: Digital out-53 */
+ 
+// including libraries
+#include <dht.h> // for DHT11 temp humidity sensor
+#include <UTFT.h>
+#include <URTouch.h>
+dht DHT;
+// Controller Pin allocations
+#define DHT11_PIN 54 
+const int Lightsensor_pin = A1;  /* Light sensor O/P pin */
+const int SMsensor_pin = A2;  /* Soil moisture sensor O/P pin */
+int RelayPin1 = 57;// for Temp control
+int RelayPin2 = 58; // for humidity control
+int RelayPin3 = 59;// for water pump control
+int RelayPin4 = 60; // for light control
+// defining IoT Cloud variables
+String AP = "KhushiNetplus4G";       // WiFi Router ID
+String PASS = "jaimatadi0548"; // WiFi Router PW
+String API = "Q1GZK4YWY9DJPQBW";   // ThingSpeak Channel API key for testing
+String HOST = "api.thingspeak.com";
+String PORT = "80";
+
+int countTrueCommand;
+int countTimeCommand; 
+boolean found = false; 
+// declaring sensor variables
+int valSensorT = 1;
+int valSensorH = 1;
+int valSensorL = 1;
+int valSensorSM = 1;
+float moisture_percentage;
+int sensor_analog;
+
+//defing Greenhouse thresholds
+int tempU=25;
+int hum=70;
+int lightU=300;
+int SMU=50;
+
+// Initialize display
+UTFT    myGLCD(ITDB32WC,38,39,40,41);
+// Initialize touchscreen
+URTouch  myTouch( 6, 5, 4, 3, 2);
+// Declare which fonts we will be using
+extern uint8_t BigFont[];
+
+int x, y;
+char stCurrent[20]="";
+int stCurrentLen=0;
+char stLast[20]="";
+
+void setup()
+{
+  // Initial setup
+  Serial3.begin(115200);
+  myGLCD.InitLCD();
+  delay(100);
+  myGLCD.clrScr();
+  myTouch.InitTouch();
+  myTouch.setPrecision(PREC_MEDIUM);
+  myGLCD.setFont(BigFont);
+  myGLCD.setBackColor(0, 0, 255);
+  printWelcomeScreen();
+  delay(2000);
+  printProductinfo();
+  delay(1000);
+ 
+  // defing controller pins for output mode for relay controll
+  pinMode(RelayPin1, OUTPUT);// set pin as output
+  digitalWrite(RelayPin1, HIGH);// switch off relay by default
+  pinMode(RelayPin2, OUTPUT);// set pin as output
+  digitalWrite(RelayPin2, HIGH);// switch off relay by default
+  pinMode(RelayPin3, OUTPUT);// set pin as output
+  digitalWrite(RelayPin3, HIGH);// switch off relay by default
+  pinMode(RelayPin4, OUTPUT);// set pin as output
+  digitalWrite(RelayPin4, HIGH);// switch off relay by default
+
+  //serial test
+  //Serial.begin(9600);
+  //Connection to WiFi 
+  //Serial.begin(115200);
+  printConnecting();
+  delay(100);
+  sendCommand("AT",5,"OK");
+  sendCommand("AT+CWMODE=1",5,"OK");// To set station mode ie ESP8266 is client
+  sendCommand("AT+CWJAP=\""+ AP +"\",\""+ PASS +"\"",20,"OK");//Connect to your WiFi with SSID name and password
+  myGLCD.print("Connected to WiFi",CENTER,95);
+  delay(1000);
+  //lcd.print("Connecting..WiFi..");
+  myGLCD.clrScr();
+  printProductinfo();
+  delay(1000);
+
+}
+
+void loop()
+{
+
+// getting sensors data 
+ valSensorT = getSensorDataT();// getting temperature data
+ valSensorH = getSensorDataH();// getting humidity data
+ valSensorSM = getSensorDataSM();
+ valSensorL = getSensorDataL();//getting light sensor data
+ delay(200);
+
+ // Display GreenHouse Parameters
+ //Displaying Sensor details
+  myGLCD.setColor(255,153,0);
+  myGLCD.fillRect(0, 52,317, 138);
+  myGLCD.setBackColor(255,153,0);
+  myGLCD.setColor(102,0,102);
+  myGLCD.print("GREEN-HOUSE DATA",CENTER,55);
+  myGLCD.setColor(0,0,128);
+
+  String Temp=String(valSensorT);
+  myGLCD.print("TP:",30,80);
+  myGLCD.print(Temp,80,80);
+  myGLCD.print("C",110,80);
+
+  String Hum=String(valSensorH);
+  myGLCD.print("HM:", 190,80);
+  myGLCD.print(Hum, 240,80);
+  myGLCD.print("%",280,80);
+  
+  String Lgt=String(valSensorL);
+  myGLCD.print("LT:",30,100);
+  myGLCD.print(Lgt,80,100);
+  myGLCD.print("Lx",130,100);
+
+  String SoilM=String(valSensorSM);
+  myGLCD.print("SM:", 190,100);
+  myGLCD.print(SoilM, 240,100);
+  myGLCD.print("%",280,100);
+  
+//Relays Controll
+ // temperature control
+ if ( valSensorT > tempU)
+  {
+  digitalWrite(RelayPin1, LOW);// switch on relay1 for cooling
+  }
+  else
+  {
+  digitalWrite(RelayPin1, HIGH);// switch off relay1 for cooling
+   }
+
+// humidity control
+if ( valSensorH > hum)
+ {
+  digitalWrite(RelayPin2, LOW);// switch on relay2 for humidity
+ }
+  else
+  {
+  digitalWrite(RelayPin2, HIGH);// switch off relay2 for humidity
+ }
+
+// water pump control
+ if ( valSensorSM < SMU)
+ {
+  digitalWrite(RelayPin3, LOW);// switch on relay3 for water pump
+ }
+  else
+  {
+  digitalWrite(RelayPin3, HIGH);// switch off elay3 for water pump
+ }
+
+ //Light control
+if ( valSensorL < lightU)
+ {
+  digitalWrite(RelayPin4, LOW);// switch on relay4 for light
+ }
+  else
+  {
+  digitalWrite(RelayPin4, HIGH);// switch off relay4 for Light
+ }
+
+ 
+ // Sending Data to Cloud_iot code 
+
+ String getData = "GET /update?api_key="+ API +"&"+ "field1" +"="+String(valSensorT);
+ getData += "&field2="+String(valSensorH);
+ getData += "&field3="+String(valSensorL);
+ getData += "&field4="+String(valSensorSM);
+ 
+ sendCommand("AT+CIPMUX=1",5,"OK");//Enable single (0) or multiple connection (1) to the web server
+ sendCommand("AT+CIPSTART=0,\"TCP\",\""+ HOST +"\","+ PORT,15,"OK");//Start TCP or UDP connection
+ sendCommand("AT+CIPSEND=0," +String(getData.length()+4),4,">");//ready to be sent. “0” here is the connection id, and length 
+ Serial3.println(getData);
+ delay(500);
+ countTrueCommand++;
+ sendCommand("AT+CIPCLOSE=0",5,"OK");// to close connection
+ 
+ // lcd.print("Uploaded to Cloud");
+
+ delay(5000);
+
+}
+
+
+
+/*************************
+**   Custom functions   **
+*************************/
+void printConnecting()
+{
+  myGLCD.setColor(255,153,0);
+  myGLCD.fillRect(0, 52,317, 138);
+  myGLCD.setBackColor(255,153,0);
+  myGLCD.setColor(102,0,102);
+  myGLCD.print("Connecting to WiFi",CENTER,75);
+  
+}
+void printWelcomeScreen()
+{
+  myGLCD.clrScr();
+  myGLCD.setColor(255, 0, 0);
+  // Project Details
+  myGLCD.fillRect(0, 0, 317, 50);
+  myGLCD.setColor(255, 255, 255);
+  myGLCD.setBackColor(255, 0, 0);
+  myGLCD.print("WELCOME TO", CENTER, 10);
+  myGLCD.print("KU HackFest 2021", CENTER,30);
+  delay(1000);
+  //Team details
+
+ myGLCD.setColor(255,255,0);
+ myGLCD.fillRect(0,51,317, 240);
+ myGLCD.setBackColor(255,255,0);
+ myGLCD.setColor(255,0,0);
+ myGLCD.print("BY:",CENTER,60);
+ myGLCD.print("BinaryCoders",CENTER,90);
+ delay(1000);
+ myGLCD.setColor(0,0,128);
+ myGLCD.print("KHUSHI SINGH ",CENTER,120);
+ delay(1000);
+ myGLCD.print("RISHABH MISHRA",CENTER,150);
+ delay(1000);
+ myGLCD.print("MANAV PARIKH",CENTER,180);
+ delay(1000);
+ myGLCD.print("SIDHARTH BANSAL",CENTER,210);
+     
+}
+
+
+
+
+void printProductinfo()
+{
+  
+// Clear the screen and draw the frame
+  myGLCD.clrScr();
+  myGLCD.setFont(BigFont);
+  myGLCD.setColor(255, 0, 0);
+  // Project Details
+  myGLCD.fillRect(0, 0, 317, 50);
+  myGLCD.setColor(255, 255, 255);
+  myGLCD.setBackColor(255, 0, 0);
+  myGLCD.print("GREEN-HOUSE CONTROL", CENTER, 10);
+  myGLCD.print("EMBEDDED SYSTEM", CENTER,30);
+  
+  //Team details
+ 
+ myGLCD.setColor(255,255,0);
+ myGLCD.fillRect(0,140,317, 240);
+ myGLCD.setBackColor(255,255,0);
+ myGLCD.setColor(255,0,0);
+ myGLCD.print("BY:",10,145);
+ myGLCD.print("BINARY CODERS",75,145);
+ myGLCD.setColor(0,0,128);
+ myGLCD.print("KHUSHI, RISHABH",CENTER,165);
+ myGLCD.print("MANAV, SIDHARTH",CENTER,185);
+
+  // Project Details
+   myGLCD.setColor(255, 0, 0);
+  myGLCD.fillRect(0,208, 317, 250);
+  myGLCD.setColor(255, 255, 255);
+  myGLCD.setBackColor(255, 0, 0);
+  myGLCD.print("KU HackFest 2021",CENTER,210);
+   
+}
+
+
+// function for fetching Temperature data
+int getSensorDataT()
+{
+  int chk = DHT.read11(DHT11_PIN); // Read Temperature for sensor
+  return DHT.temperature;
+}
+
+// function for fetching Humidity data
+int getSensorDataH()
+{
+  int chk = DHT.read11(DHT11_PIN); // Read Temperature for sensor
+  return DHT.humidity;
+}
+
+// function for fetching soil moisture data
+int getSensorDataSM()
+{
+  
+  sensor_analog = analogRead(SMsensor_pin);
+  return (moisture_percentage = ( 100 - ( (sensor_analog/1023.00) * 100 ) ));
+  
+ }
+
+// function for fetching Light data
+ int getSensorDataL()
+{
+  
+  sensor_analog = analogRead(Lightsensor_pin);
+  float Vout = sensor_analog*0.00488;
+  sensor_analog = 50*(5-Vout)/Vout;
+  return sensor_analog;
+    
+ }
+
+
+
+void sendCommand(String command, int maxTime, char readReplay[])
+{
+  
+  while(countTimeCommand < (maxTime*1))
+  {
+    
+    Serial3.println(command);
+    if(Serial3.find(readReplay))//ok
+    {
+      found = true;
+      break;
+    }
+  
+    countTimeCommand++;
+  }
+  
+  if(found == true)
+  {
+    //Serial.println("OYI");
+    countTrueCommand++;
+    countTimeCommand = 0;
+  }
+  
+  if(found == false)
+  {
+    //Serial.println("Fail");
+    countTrueCommand = 0;
+    countTimeCommand = 0;
+  }
+  
+  found = false;
+ }
